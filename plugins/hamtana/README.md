@@ -9,7 +9,7 @@
 בתוך Claude Code:
 
 ```
-/plugin marketplace add OronNessim/hamtana-plugin-plugin
+/plugin marketplace add OronNessim/hamtana-plugin
 /plugin install hamtana@hamtana
 ```
 
