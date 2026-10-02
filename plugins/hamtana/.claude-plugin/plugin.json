@@ -1,0 +1,24 @@
+{
+  "name": "hamtana",
+  "displayName": "המתנה",
+  "version": "0.1.0",
+  "description": "המתנה: מודעה קצרה בעברית מעל הפרומפט בזמן ש-Claude עובד, ואתם מרוויחים על כל צפייה. מוצגת רק אחרי שחיברתם חשבון.",
+  "author": { "name": "Oron Nissim" },
+  "homepage": "https://hamtana.oronai.co.il",
+  "keywords": ["hebrew", "israel", "ads"],
+  "userConfig": {
+    "serverUrl": {
+      "type": "string",
+      "title": "כתובת השרת",
+      "description": "השרת של המתנה. אין צורך לשנות.",
+      "default": "https://hamtana.oronai.co.il"
+    },
+    "terminalHebrew": {
+      "type": "string",
+      "title": "עברית בטרמינל",
+      "description": "auto: בלי שינוי (Claude Code כבר מסדר עברית ב-Windows). reverse: הופך סדר אותיות לטרמינל שמציג עברית הפוך. plain: אף פעם לא הופך.",
+      "options": ["auto", "reverse", "plain"],
+      "default": "auto"
+    }
+  }
+}

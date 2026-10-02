@@ -1,0 +1,12 @@
+{
+  "name": "hamtana",
+  "owner": { "name": "Oron Nissim" },
+  "metadata": { "description": "המתנה: מודעה אחת בעברית בתוך Claude Code, ו-80% מההכנסה למפתחים בישראל." },
+  "plugins": [
+    {
+      "name": "hamtana",
+      "source": "./plugins/hamtana",
+      "description": "מודעה קצרה בעברית מעל שורת הקלט בזמן ש-Claude עובד. מוצגת רק אחרי שחיברתם חשבון."
+    }
+  ]
+}

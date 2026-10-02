@@ -1,0 +1,4 @@
+{
+  "description": "Hamtana: /hamtana pane, a link invite and the ad band above the prompt during active turns",
+  "modules": ["./register.ts"]
+}
