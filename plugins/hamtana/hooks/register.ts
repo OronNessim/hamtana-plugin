@@ -29,8 +29,9 @@ function hostOf($: EngineInterface): Host {
     debug: text => $.ui.log(text, { to: 'debug' }),
     openPane: () =>
       $.ui.open({ id: PANE_ID, title: S.PANE_TITLE, focus: true, closeOnEscape: true }),
-    openWelcome: () =>
-      $.ui.open({ id: PANE_ID, title: S.PANE_TITLE, focus: false, closeOnEscape: true }),
+    // The host only accepts focus true or left out (2.1.287 refuses focus: false), so the one-time
+    // welcome takes focus too; Escape closes it.
+    openWelcome: () => $.ui.open({ id: PANE_ID, title: S.PANE_TITLE, closeOnEscape: true }),
     surfaces: () => $.session.surfaces(),
   }
 }
@@ -52,8 +53,9 @@ export const register: Register = (on, options) => {
     try {
       app.bind(hostOf($))
       await app.load()
-      // never blocks the session: the welcome pane opens when it can
-      void app.welcome().catch(() => undefined)
+      // Awaited: the hook context ($) is only valid while this handler runs, so a detached call
+      // never reached the host. welcome() is local only (store, surfaces, ui.open), so this is quick.
+      await app.welcome().catch(() => undefined)
     } catch (error) {
       $.ui.log(`hamtana: start failed: ${String(error)}`, { to: 'debug' })
     }

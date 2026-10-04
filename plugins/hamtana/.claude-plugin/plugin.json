@@ -1,7 +1,7 @@
 {
   "name": "hamtana",
   "displayName": "המתנה",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "המתנה: מודעה קצרה בעברית מעל הפרומפט בזמן ש-Claude עובד, ואתם מרוויחים על כל צפייה. מוצגת רק אחרי שחיברתם חשבון.",
   "author": { "name": "Oron Nissim" },
   "homepage": "https://hamtana.oronai.co.il",

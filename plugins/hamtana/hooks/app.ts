@@ -40,7 +40,7 @@ export type Host = {
   toast: (text: string) => void
   debug: (text: string) => void
   openPane: () => Promise<UiOpenResult>
-  /** The same pane without taking keyboard focus: used for the one-time welcome. */
+  /** The same pane for the one-time welcome (the host gives it focus; Escape closes it). */
   openWelcome: () => Promise<UiOpenResult>
   surfaces: () => Promise<readonly RenderSurface[]>
 }

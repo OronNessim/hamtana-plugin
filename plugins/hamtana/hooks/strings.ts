@@ -8,7 +8,11 @@ export const INVITE = 'המתנה · התחברו כדי להרוויח בזמן
 
 export const INVITE_BUTTON = 'התחברות'
 
+/** The legal ad marking, and the default label. */
 export const AD_LABEL = 'מודעה'
+
+/** The label of a job ad. It still carries the ad marking. */
+export const AD_LABEL_JOBS = 'דרושים · מודעה'
 
 export const AD_LINK = 'לפרטים'
 

@@ -7,6 +7,7 @@
 
 import type { HttpInit, HttpResponse, Timer } from 'claude-code'
 
+import * as S from './strings'
 import {
   AD_TEXT_MAX,
   ADVERTISER_MAX,
@@ -237,9 +238,30 @@ export function meOf(body: unknown): Me {
   return me
 }
 
+/**
+ * The only labels the band may draw, each carrying the ad marking
+ * "מודעה". The server picks one; nothing else it sends is ever shown there.
+ */
+export const AD_LABELS = [S.AD_LABEL, S.AD_LABEL_JOBS] as const
+
+export type AdLabel = (typeof AD_LABELS)[number]
+
+/**
+ * The label the server sent for an ad: cleaned like every other field, then
+ * accepted only when it equals an allowed label exactly. Missing (an older
+ * server), wrong, long or spoofed all give the default "מודעה".
+ */
+export function adLabelOf(value: unknown): AdLabel {
+  const cleaned = cleanLine(value, 40)
+
+  return AD_LABELS.find(label => label === cleaned) ?? S.AD_LABEL
+}
+
 /** One ad as the band draws it, cleaned. */
 export type Ad = {
   serveId: string
+  /** "מודעה", or "דרושים · מודעה" for a job ad. Always holds "מודעה". */
+  label: AdLabel
   text: string
   /** The click-tracking link, or null when it is not a safe https URL. */
   url: string | null
@@ -281,6 +303,7 @@ export function adAnswerOf(body: unknown): AdAnswer | null {
     kind: 'ad',
     ad: {
       serveId,
+      label: adLabelOf(field(raw, 'label')),
       text,
       url: safeHref(field(raw, 'url')),
       advertiser: cleanLine(field(raw, 'advertiser'), ADVERTISER_MAX),

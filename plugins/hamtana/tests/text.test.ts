@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { adAnswerOf, devicePollOf, retryAfterOf } from '../hooks/api'
+import { adAnswerOf, adLabelOf, devicePollOf, retryAfterOf } from '../hooks/api'
+import * as S from '../hooks/strings'
 import { cleanLine, safeHref, serverBaseOf, shekels } from '../hooks/text'
 import { linesOf } from '../hooks/views'
 
@@ -60,6 +61,84 @@ describe('text', () => {
       retryAfterMs: 5,
     })
     expect(adAnswerOf('nonsense')).toBeNull()
+  })
+
+  describe('ad label', () => {
+    const labelOfAnswer = (label: unknown) => {
+      const answer = adAnswerOf({
+        ad: { serveId: 's', text: 'טקסט', label },
+        token: 't',
+      })
+
+      return answer?.kind === 'ad' ? answer.ad.label : undefined
+    }
+
+    test('the two allowed labels are spelled out and both carry the ad marking', () => {
+      expect(S.AD_LABEL).toBe('מודעה')
+      expect(S.AD_LABEL_JOBS).toBe('דרושים · מודעה')
+      expect(S.AD_LABEL_JOBS.includes(S.AD_LABEL)).toBe(true)
+    })
+
+    test('a valid job label is kept', () => {
+      expect(labelOfAnswer('דרושים · מודעה')).toBe('דרושים · מודעה')
+      expect(labelOfAnswer('מודעה')).toBe('מודעה')
+    })
+
+    test('a missing label (an older server) is the plain ad label', () => {
+      expect(labelOfAnswer(undefined)).toBe('מודעה')
+
+      const answer = adAnswerOf({ ad: { serveId: 's', text: 'טקסט' }, token: 't' })
+
+      expect(answer).toMatchObject({ kind: 'ad', ad: { label: 'מודעה' } })
+    })
+
+    test('junk, long and spoofed labels fall back to the plain ad label', () => {
+      const spoofs: unknown[] = [
+        '',
+        '   ',
+        'דרושים',
+        'דרושים ·',
+        'משרה',
+        'ממומן',
+        'מבצע',
+        'דרושים · מודעה · לחצו כאן עכשיו',
+        'דרושים · מודעה'.repeat(10),
+        'דרושים - מודעה',
+        'דרושים מודעה',
+        'מודעה · דרושים',
+        'דרושים  ·  מודעה!',
+        'דרושים · מודעה.',
+        'דרושים · ' + 'מודעה'.slice(0, 3) + String.fromCharCode(0x200b) + 'עה',
+        'דרושים · מוד' + String.fromCharCode(0x0430) + 'עה',
+        '<b>דרושים · מודעה</b>',
+        'Jobs · Ad',
+        'job',
+        42,
+        true,
+        null,
+        ['דרושים · מודעה'],
+        { label: 'דרושים · מודעה' },
+      ]
+
+      for (const spoof of spoofs) {
+        expect(labelOfAnswer(spoof), JSON.stringify(spoof)).toBe('מודעה')
+      }
+    })
+
+    test('the label is cleaned like other fields before it is compared', () => {
+      const bidi = String.fromCharCode(0x200f)
+
+      expect(labelOfAnswer(' דרושים · מודעה\n')).toBe('דרושים · מודעה')
+      expect(labelOfAnswer('דרושים' + bidi + ' · מודעה')).toBe('דרושים · מודעה')
+    })
+
+    test('whatever the server sends, the label holds the ad marking', () => {
+      const inputs: unknown[] = [undefined, null, 1, '', 'x', 'דרושים', 'דרושים · מודעה', 'מודעה', 'a'.repeat(5_000)]
+
+      for (const input of inputs) {
+        expect(adLabelOf(input).includes('מודעה'), JSON.stringify(input)).toBe(true)
+      }
+    })
   })
 
   test('a poll answer must carry a clean token', () => {

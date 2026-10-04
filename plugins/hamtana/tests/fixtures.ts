@@ -138,6 +138,16 @@ export function adBody(n: number, ad: Record<string, unknown> = {}) {
 
 export const adText = (n: number) => `קפה טוב למפתחים ${n}`
 
+/** The text of every Text a drawing holds. `find` matches a part of a text; this is for exact checks. */
+export async function textsOf(drawn: {
+  findAll: (query: { type: 'Text' }) => Promise<ReadonlyArray<{ text?: string }>>
+}): Promise<Array<string | undefined>> {
+  return (await drawn.findAll({ type: 'Text' })).map(found => found.text)
+}
+
+/** The label a job ad carries on the wire (spelled out so a typo in strings.ts shows). */
+export const JOB_LABEL = 'דרושים · מודעה'
+
 export const BAND_PROPS: RenderPropsOf['AbovePrompt'] = {
   hasSurvey: false,
   isWorking: false,

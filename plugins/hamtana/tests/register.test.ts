@@ -8,9 +8,11 @@ import {
   band,
   BASE,
   hamtana,
+  JOB_LABEL,
   linkedRoutes,
   pane,
   SESSION,
+  textsOf,
   TOKEN,
   turnEnd,
   working,
@@ -160,6 +162,102 @@ describe('register', () => {
     expect(await drawn.find({ type: 'Text', text: adText(1) })).toBeDefined()
     expect(await drawn.find({ type: 'Text', text: 'בית קפה 1' })).toBeDefined()
     expect((await drawn.find({ type: 'Link' }))?.props.href).toBe(`${BASE}/c/serve-1`)
+  })
+
+  test('a job ad: the band draws the job label instead of the plain one', async ($, on) => {
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: JOB_LABEL }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+
+    const drawn = await $.ui.mount(band('terminal'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await drawn.redraw(working(true))
+
+    expect(JOB_LABEL).toBe(S.AD_LABEL_JOBS)
+    expect(await drawn.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+    expect(await textsOf(drawn), 'one label, not two').not.toContain(S.AD_LABEL)
+    expect(await drawn.find({ type: 'Text', text: adText(1) })).toBeDefined()
+    expect(await drawn.find({ type: 'Text', text: 'בית קפה 1' })).toBeDefined()
+    expect((await drawn.find({ type: 'Link' }))?.props.href).toBe(`${BASE}/c/serve-1`)
+  })
+
+  test('an ad with no label (an older server) keeps the plain label', async ($, on) => {
+    const w = world(on, { store: { token: TOKEN }, routes: linkedRoutes() })
+
+    await $.session.start(SESSION)
+
+    const drawn = await $.ui.mount(band('desktop'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await drawn.redraw(working(true))
+
+    expect(await drawn.find({ type: 'Text', text: S.AD_LABEL })).toBeDefined()
+    expect(await drawn.find({ type: 'Text', text: JOB_LABEL })).toBeUndefined()
+  })
+
+  test('a spoofed label is never drawn: the plain label shows instead', async ($, on) => {
+    const spoof = 'דרושים · מודעה · מבצע חם, לחצו כאן עכשיו'
+
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: spoof }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+
+    const drawn = await $.ui.mount(band('terminal'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await drawn.redraw(working(true))
+
+    expect(await drawn.find({ type: 'Text', text: S.AD_LABEL })).toBeDefined()
+    expect(await drawn.find({ type: 'Text', text: spoof })).toBeUndefined()
+    expect(await drawn.find({ type: 'Text', text: JOB_LABEL })).toBeUndefined()
+  })
+
+  test('the longer job label never shortens the ad text or the advertiser, even in a narrow band', async ($, on) => {
+    const text = 'ב'.repeat(60)
+    const advertiser = 'ג'.repeat(40)
+
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        'GET /api/mod/ad': () => ({
+          status: 200,
+          body: adBody(1, { label: JOB_LABEL, text, advertiser }),
+        }),
+      },
+    })
+
+    await $.session.start(SESSION)
+
+    const drawn = await $.ui.mount(band('terminal'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await drawn.redraw({ ...working(true), bodyColumns: 40 })
+
+    expect(await drawn.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+    expect(await drawn.find({ type: 'Text', text }), 'the 60 characters stay whole').toBeDefined()
+    expect(await drawn.find({ type: 'Text', text: `· ${advertiser}` }), 'the 40 stay whole').toBeDefined()
+
+    const boxes = await drawn.findAll({ type: 'Box' })
+
+    expect(
+      boxes.some(box => box.props.flexWrap === 'wrap'),
+      'the row wraps, so a long label moves the break instead of cutting text',
+    ).toBe(true)
   })
 
   test('the ad shows only while Claude is working', async ($, on) => {
@@ -591,6 +689,126 @@ describe('register', () => {
     expect(await desktop.find({ type: 'Text', text: adText(1) })).toBeDefined()
   })
 
+  test('terminalHebrew=reverse reorders the job label on the terminal only', { options: { terminalHebrew: 'reverse' } }, async ($, on) => {
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: JOB_LABEL }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+
+    const terminal = await $.ui.mount(band('terminal'))
+    const desktop = await $.ui.mount(band('desktop'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await terminal.redraw(working(true))
+    await desktop.redraw(working(true))
+
+    expect(visualOrder(JOB_LABEL)).not.toBe(JOB_LABEL)
+    expect(await terminal.find({ type: 'Text', text: visualOrder(JOB_LABEL) })).toBeDefined()
+    expect(await terminal.find({ type: 'Text', text: JOB_LABEL })).toBeUndefined()
+    expect(await desktop.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+  })
+
+  test('terminalHebrew=plain keeps the job label as sent', { options: { terminalHebrew: 'plain' } }, async ($, on) => {
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: JOB_LABEL }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+
+    const terminal = await $.ui.mount(band('terminal'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await terminal.redraw(working(true))
+
+    expect(await terminal.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+  })
+
+  test('auto draws the job label unchanged on the terminal', async ($, on) => {
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: JOB_LABEL }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+
+    const terminal = await $.ui.mount(band('terminal'))
+
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+    await terminal.redraw(working(true))
+
+    expect(await terminal.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+  })
+
+  test('the pane draws the ad with its job label', async ($, on) => {
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        ...linkedRoutes(),
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: JOB_LABEL }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+    await $.ui.mount(band('desktop'))
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+
+    const drawn = await $.ui.mount(pane('desktop'))
+
+    expect(await drawn.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+    expect(await textsOf(drawn), 'one label, not two').not.toContain(S.AD_LABEL)
+    expect(await drawn.find({ type: 'Text', text: adText(1) })).toBeDefined()
+  })
+
+  test('the pane draws the plain label for an ad without one', async ($, on) => {
+    const w = world(on, { store: { token: TOKEN }, routes: linkedRoutes() })
+
+    await $.session.start(SESSION)
+    await $.ui.mount(band('desktop'))
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+
+    const drawn = await $.ui.mount(pane('desktop'))
+
+    expect(await drawn.find({ type: 'Text', text: S.AD_LABEL })).toBeDefined()
+    expect(await drawn.find({ type: 'Text', text: adText(1) })).toBeDefined()
+    expect(await drawn.find({ type: 'Text', text: JOB_LABEL })).toBeUndefined()
+  })
+
+  test('terminalHebrew=reverse reorders the job label in the terminal pane', { options: { terminalHebrew: 'reverse' } }, async ($, on) => {
+    const w = world(on, {
+      store: { token: TOKEN },
+      routes: {
+        ...linkedRoutes(),
+        'GET /api/mod/ad': () => ({ status: 200, body: adBody(1, { label: JOB_LABEL }) }),
+      },
+    })
+
+    await $.session.start(SESSION)
+    await $.ui.mount(band('desktop'))
+    await $.turn.start({ text: 'x', turnId: 't1' })
+    await w.clock.settle()
+
+    const terminal = await $.ui.mount(pane('terminal'))
+    const desktop = await $.ui.mount(pane('desktop'))
+
+    expect(await terminal.find({ type: 'Text', text: visualOrder(JOB_LABEL) })).toBeDefined()
+    expect(await terminal.find({ type: 'Text', text: JOB_LABEL })).toBeUndefined()
+    expect(await desktop.find({ type: 'Text', text: JOB_LABEL })).toBeDefined()
+  })
+
   test('auto (the default) never reorders', async ($, on) => {
     const w = world(on, { store: { token: TOKEN }, routes: linkedRoutes() })
 
@@ -604,14 +822,14 @@ describe('register', () => {
 
     expect(await terminal.find({ type: 'Text', text: adText(1) })).toBeDefined()
   })
-  test('first run, unlinked: the welcome pane opens once, without taking focus', async ($, on) => {
+  test('first run, unlinked: the welcome pane opens once', async ($, on) => {
     const w = world(on, { routes: linkedRoutes() })
 
     await $.session.start(SESSION)
     await w.clock.settle()
 
     expect(w.opened).toEqual(['hamtana'])
-    expect(w.openedFocus).toEqual([false])
+    expect(w.openedFocus, 'focus left out: the host refuses focus: false').toEqual([undefined])
     expect(w.store.get('welcomed')).toBe(true)
 
     const drawn = await $.ui.mount(pane('desktop'))

@@ -84,10 +84,19 @@ function paragraph(
 
 // ---- the band ------------------------------------------------------------------
 
+/**
+ * The dim ad label the server chose ("מודעה" or "דרושים · מודעה"), one Text
+ * that is ordered like every other Hebrew string here. The band row wraps
+ * and nothing is measured against it, so a longer label only moves where
+ * the row breaks: it never shortens the ad text, which has its own cap.
+ */
+const adLabel = (ui: Ui, layout: Layout, ad: Ad) =>
+  ui.Text({ dimColor: true, children: [textOf(layout, ad.label)] })
+
 /** One ad: the dim label, the text, the advertiser, and its link. */
 export function adBand(ui: Ui, layout: Layout, ad: Ad): RenderElement {
   const parts: RenderElement[] = [
-    ui.Text({ dimColor: true, children: [textOf(layout, S.AD_LABEL)] }),
+    adLabel(ui, layout, ad),
     ui.Text({ children: [textOf(layout, ad.text)] }),
   ]
 
@@ -244,7 +253,7 @@ export function pane(ui: Ui, layout: Layout, model: PaneModel, actions: PaneActi
   if (model.ad) {
     children.push(
       rowOf(ui, layout, [
-        ui.Text({ dimColor: true, children: [textOf(layout, S.AD_LABEL)] }),
+        adLabel(ui, layout, model.ad),
         ui.Text({ children: [textOf(layout, model.ad.text)] }),
       ]),
     )
