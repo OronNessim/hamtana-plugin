@@ -14,6 +14,13 @@ export const AD_LABEL = 'מודעה'
 /** The label of a job ad. It still carries the ad marking. */
 export const AD_LABEL_JOBS = 'דרושים · מודעה'
 
+/**
+ * The label of a house message: Hamtana's own line when no campaign runs.
+ * It is not an ad, so it never carries "מודעה", and no paid ad may ever
+ * carry it.
+ */
+export const HOUSE_LABEL = 'המתנה'
+
 export const AD_LINK = 'לפרטים'
 
 export const COMMAND_DESCRIPTION =
@@ -35,7 +42,7 @@ export const WELCOME_STEPS = [
 ]
 
 export const PRIVACY =
-  'התוסף לא קורא קבצים, פרומפטים או קוד. הוא שולח רק בקשה למודעה ואישור צפייה.'
+  'התוסף לא קורא קבצים, פרומפטים או קוד. הוא שולח רק בקשה למודעה, אישור צפייה, ופעם ביום סימן אנונימי שהוא מותקן.'
 
 export const UNLINKED = 'עוד לא חיברתם חשבון. בלי חיבור לא מוצגות מודעות.'
 

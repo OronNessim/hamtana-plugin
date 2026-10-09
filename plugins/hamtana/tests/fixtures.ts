@@ -116,6 +116,7 @@ export function world(on: On, options: WorldOptions = {}) {
     opened,
     adRequests: () => sent.filter(request => request.path.startsWith('/api/mod/ad')),
     impressions: () => sent.filter(request => request.path === '/api/mod/impression'),
+    hellos: () => sent.filter(request => request.path === '/api/mod/hello'),
     calls: (path: string) => sent.filter(request => request.path.startsWith(path)),
   }
 }
@@ -137,6 +138,31 @@ export function adBody(n: number, ad: Record<string, unknown> = {}) {
 }
 
 export const adText = (n: number) => `קפה טוב למפתחים ${n}`
+
+export const HOUSE_TEXT = 'רוצים לפרסם כאן? מפתחים בישראל רואים את זה'
+
+export const HOUSE_URL = `${BASE}/?ref=house#advertisers`
+
+/** The house message as GET /api/mod/ad?house=1 answers it when no campaign is eligible. */
+export function houseBody(ad: Record<string, unknown> = {}) {
+  return {
+    ad: {
+      serveId: 'house',
+      text: HOUSE_TEXT,
+      url: HOUSE_URL,
+      advertiser: '',
+      label: 'המתנה',
+      house: true,
+      ...ad,
+    },
+    token: null,
+    minDwellMs: 10_000,
+    rotateMs: 60_000,
+  }
+}
+
+/** The house label (spelled out so a typo in strings.ts shows). */
+export const HOUSE_LABEL = 'המתנה'
 
 /** The text of every Text a drawing holds. `find` matches a part of a text; this is for exact checks. */
 export async function textsOf(drawn: {

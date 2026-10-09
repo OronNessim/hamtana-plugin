@@ -6,7 +6,9 @@
  *
  * It reads no files, runs no processes, reads no environment variables and
  * never sees prompts, answers or tool calls: `turn.start` and
- * `turn.complete` are used only for when a turn starts and ends.
+ * `turn.complete` are used only for when a turn starts and ends. Once a day
+ * `session.start` sends an anonymous hello: a random install id, the plugin
+ * version and the surface, never the device token.
  */
 
 import type { EngineInterface, Register, RenderSurface } from 'claude-code'
@@ -50,8 +52,13 @@ export const register: Register = (on, options) => {
   const app = createApp(settingsOf(options))
 
   on('session.start', async ($, e, next) => {
+    // The daily anonymous hello, started first so its one request runs while the rest is done, and
+    // awaited below for the same reason welcome() is. It never rejects and has a short timeout.
+    let hello: Promise<void> = Promise.resolve()
+
     try {
       app.bind(hostOf($))
+      hello = app.hello(e.surface).catch(() => undefined)
       await app.load()
       // Awaited: the hook context ($) is only valid while this handler runs, so a detached call
       // never reached the host. welcome() is local only (store, surfaces, ui.open), so this is quick.
@@ -70,6 +77,8 @@ export const register: Register = (on, options) => {
     } catch (error) {
       $.ui.log(`hamtana: /hamtana not registered: ${String(error)}`, { to: 'debug' })
     }
+
+    await hello
 
     return next(e)
   })

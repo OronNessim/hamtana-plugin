@@ -34,7 +34,11 @@ describe('register', () => {
     await drawn.redraw(working(true))
     await w.clock.advance(60_000)
 
-    expect(w.sent, 'nothing reaches the server before linking').toEqual([])
+    expect(
+      w.sent.filter(request => request.path !== '/api/mod/hello'),
+      'nothing but the anonymous hello reaches the server before linking',
+    ).toEqual([])
+    expect(w.hellos().every(request => request.auth === undefined)).toBe(true)
     expect(await drawn.find({ type: 'Text', text: S.AD_LABEL })).toBeUndefined()
 
     await $.turn.complete(turnEnd('t1'))
@@ -153,7 +157,7 @@ describe('register', () => {
 
     const [request] = w.adRequests()
 
-    expect(request?.path).toBe('/api/mod/ad?surface=terminal')
+    expect(request?.path).toBe('/api/mod/ad?surface=terminal&house=1')
     expect(request?.auth).toBe(`Bearer ${TOKEN}`)
 
     await drawn.redraw(working(true))

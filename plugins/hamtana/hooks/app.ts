@@ -1,7 +1,9 @@
 /**
  * Hamtana's state and behaviour, kept apart from `$` so every rule is plain
  * code: linking (device code), the ad loop inside a turn (fetch, dwell,
- * impression, rotation, backoff), pause, and the text replies of /hamtana.
+ * impression, rotation, backoff; a house message in place of an ad when no
+ * campaign runs), pause, the daily anonymous hello, and the text replies of
+ * /hamtana.
  *
  * Nothing here throws to a hook: every outside call goes through `Host`,
  * whose network calls resolve to results (see api.ts) and whose other calls
@@ -53,8 +55,70 @@ export type Settings = {
   hebrew: HebrewMode
 }
 
-/** Keys in `$.store`, shared by every session on the machine. */
-export const KEYS = { token: 'token', paused: 'paused', user: 'user', welcomed: 'welcomed' } as const
+/**
+ * Keys in `$.store`, shared by every session on the machine. `installId` is
+ * the anonymous random id the daily hello sends; `helloDay` the UTC day
+ * (`YYYY-MM-DD`) of the last hello the server answered.
+ */
+export const KEYS = {
+  token: 'token',
+  paused: 'paused',
+  user: 'user',
+  welcomed: 'welcomed',
+  installId: 'installId',
+  helloDay: 'helloDay',
+} as const
+
+/**
+ * The plugin's version for the daily hello. The module reads no files, so
+ * this is kept equal to `version` in .claude-plugin/plugin.json by hand.
+ */
+export const VERSION = '0.3.0'
+
+/** One hello may take this long: it runs inside session start. */
+export const HELLO_TIMEOUT_MS = 3_000
+
+/** What the server accepts as an install id. */
+export const INSTALL_ID = /^[A-Za-z0-9_-]{16,64}$/
+
+/**
+ * A fresh random install id: a UUID where the runtime has one, else 16
+ * random bytes in hex, else Math.random. Not a secret: it only has to be
+ * unlikely to collide.
+ */
+export function newInstallId(): string {
+  try {
+    const id = crypto.randomUUID()
+
+    if (INSTALL_ID.test(id)) return id
+  } catch {
+    // no randomUUID here: try the next source
+  }
+
+  try {
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch {
+    // no crypto at all
+  }
+
+  let id = ''
+
+  while (id.length < 32) id += Math.random().toString(36).slice(2)
+
+  return id.slice(0, 32)
+}
+
+/** The UTC day of a clock reading, `YYYY-MM-DD`, or null when it is not a time. */
+export function dayOf(ms: number): string | null {
+  const date = new Date(ms)
+
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null
+}
+
+/** The surface the hello reports. */
+export type HelloSurface = 'terminal' | 'desktop' | 'unknown'
 
 export const PANE_ID = 'hamtana'
 
@@ -135,7 +199,9 @@ export function createApp(settings: Settings) {
 
   let hasSeenBand = false
   let isInviteDone = false
-  let surfaceParam: 'terminal' | 'desktop' = 'terminal'
+  /** The surface the session draws on, once a band or session start named one. */
+  let seenSurface: 'terminal' | 'desktop' | null = null
+  let isHelloing = false
 
   let turn: Turn | null = null
   let turnSeq = 0
@@ -303,7 +369,8 @@ export function createApp(settings: Settings) {
 
       lastFetchAt = now
 
-      const result = await request('/api/mod/ad?surface=' + surfaceParam, {
+      // house=1: with no campaign to serve, the server answers Hamtana's own line instead of ad: null
+      const result = await request(`/api/mod/ad?surface=${seenSurface ?? 'terminal'}&house=1`, {
         token: token ?? '',
       })
 
@@ -376,19 +443,25 @@ export function createApp(settings: Settings) {
       isReported: false,
     }
 
+    // A house message rotates like an ad, so a real ad replaces it as soon as one runs
     next.rotate = later(answer.ad.rotateMs, () => {
       next.rotate = null
 
       if (shown === next) void pump(seq)
     })
 
+    if (answer.ad.isHouse) debug(`house message; next ask in ${answer.ad.rotateMs} ms`)
+
     shown = next
     redraw()
   }
 
-  /** The ad was drawn: start its dwell clock unless it is already running. */
+  /**
+   * The ad was drawn: start its dwell clock unless it is already running.
+   * A house message has no dwell: it is never reported.
+   */
   function markDrawn(current: Shown): void {
-    if (current.isReported || current.dwell) return
+    if (current.ad.isHouse || current.isReported || current.dwell) return
 
     current.shownSince = null
     current.dwell = later(current.ad.minDwellMs, () => {
@@ -411,7 +484,7 @@ export function createApp(settings: Settings) {
   }
 
   async function onDwell(current: Shown): Promise<void> {
-    if (shown !== current || current.isReported || !isTurnLive(current.seq)) return
+    if (shown !== current || current.ad.isHouse || current.isReported || !isTurnLive(current.seq)) return
 
     current.isReported = true
 
@@ -425,7 +498,8 @@ export function createApp(settings: Settings) {
   async function report(ad: Ad, dwellMs: number, mayRetry: boolean): Promise<void> {
     const deviceToken = token
 
-    if (!deviceToken) return
+    // a house message is never an impression: it has no serve token to send
+    if (!deviceToken || ad.isHouse || ad.serveToken === '') return
 
     const result = await request('/api/mod/impression', {
       token: deviceToken,
@@ -518,9 +592,7 @@ export function createApp(settings: Settings) {
    */
   function band(props: { hasSurvey: boolean; isWorking: boolean }, surface: RenderSurface): BandView {
     hasSeenBand = true
-
-    if (surface === 'desktop') surfaceParam = 'desktop'
-    else if (surface === 'terminal') surfaceParam = 'terminal'
+    noteSurface(surface)
 
     if (props.hasSurvey) {
       markHidden()
@@ -547,6 +619,69 @@ export function createApp(settings: Settings) {
   function dismissInvite(): void {
     isInviteDone = true
     redraw()
+  }
+
+  /** Remembers the surface a band or session start named, when it is one ads go to. */
+  function noteSurface(surface: RenderSurface | null | undefined): void {
+    if (surface === 'terminal' || surface === 'desktop') seenSurface = surface
+  }
+
+  // ---- the daily hello -------------------------------------------------------
+
+  /** The stored install id, or a new one saved for next time. */
+  async function installId(): Promise<string> {
+    const stored = await storeGet(KEYS.installId)
+
+    if (typeof stored === 'string' && INSTALL_ID.test(stored)) return stored
+
+    const fresh = newInstallId()
+
+    await storeSet(KEYS.installId, fresh)
+
+    return fresh
+  }
+
+  /**
+   * At most once a day per machine, linked or not: tells the server this
+   * install is active. Anonymous: no device token, only a random install id,
+   * the plugin version and the surface. The day is stored once the server
+   * answered (any status); a network failure tries again next session.
+   */
+  async function hello(surface?: RenderSurface | null): Promise<void> {
+    noteSurface(surface)
+
+    if (isHelloing || !host || !settings.base) return
+
+    isHelloing = true
+
+    try {
+      const day = dayOf(await nowOr(Number.NaN))
+
+      if (day === null || (await storeGet(KEYS.helloDay)) === day) return
+
+      const body: { installId: string; version: string; surface: HelloSurface } = {
+        installId: await installId(),
+        version: VERSION,
+        surface: seenSurface ?? 'unknown',
+      }
+
+      // no token on purpose: the hello stays anonymous even on a linked device
+      const result = await request('/api/mod/hello', { body, timeoutMs: HELLO_TIMEOUT_MS })
+
+      if (result.kind === 'network') {
+        debug(`hello not sent (${result.reason})`)
+
+        return
+      }
+
+      if (result.kind === 'http') debug(`hello refused: HTTP ${result.status} ${errorCodeOf(result.body) ?? ''}`)
+
+      await storeSet(KEYS.helloDay, day)
+    } catch (error) {
+      debug(`hello threw: ${String(error)}`)
+    } finally {
+      isHelloing = false
+    }
   }
 
   // ---- linking ---------------------------------------------------------------
@@ -924,6 +1059,7 @@ export function createApp(settings: Settings) {
     turnEnded,
     band,
     dismissInvite,
+    hello,
     welcome,
     open: openPane,
     startLink,
@@ -940,7 +1076,8 @@ export function createApp(settings: Settings) {
         user,
         me,
         flow,
-        ad: shown && turn && shown.seq === turn.seq ? shown.ad : null,
+        // a house message stays in the band: the pane shows only a real ad
+        ad: shown && !shown.ad.isHouse && turn && shown.seq === turn.seq ? shown.ad : null,
       }
     },
   }

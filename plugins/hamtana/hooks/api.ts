@@ -239,17 +239,18 @@ export function meOf(body: unknown): Me {
 }
 
 /**
- * The only labels the band may draw, each carrying the ad marking
+ * The only labels a paid ad may carry, each holding the ad marking
  * "מודעה". The server picks one; nothing else it sends is ever shown there.
+ * "המתנה" is not one of them: only a house message carries it.
  */
 export const AD_LABELS = [S.AD_LABEL, S.AD_LABEL_JOBS] as const
 
 export type AdLabel = (typeof AD_LABELS)[number]
 
 /**
- * The label the server sent for an ad: cleaned like every other field, then
- * accepted only when it equals an allowed label exactly. Missing (an older
- * server), wrong, long or spoofed all give the default "מודעה".
+ * The label the server sent for a paid ad: cleaned like every other field,
+ * then accepted only when it equals an allowed label exactly. Missing (an
+ * older server), wrong, long, spoofed or "המתנה" all give the default "מודעה".
  */
 export function adLabelOf(value: unknown): AdLabel {
   const cleaned = cleanLine(value, 40)
@@ -257,20 +258,40 @@ export function adLabelOf(value: unknown): AdLabel {
   return AD_LABELS.find(label => label === cleaned) ?? S.AD_LABEL
 }
 
+/** The one label a house message carries, whatever the server sends. */
+export type HouseLabel = typeof S.HOUSE_LABEL
+
+/** The serveId the server gives a house message. */
+export const HOUSE_SERVE_ID = 'house'
+
 /** One ad as the band draws it, cleaned. */
 export type Ad = {
   serveId: string
-  /** "מודעה", or "דרושים · מודעה" for a job ad. Always holds "מודעה". */
-  label: AdLabel
   text: string
   /** The click-tracking link, or null when it is not a safe https URL. */
   url: string | null
   advertiser: string
-  /** The single-use serve token the impression report sends back. */
+  /** The single-use serve token the impression report sends back; '' for a house message. */
   serveToken: string
   minDwellMs: number
   rotateMs: number
-}
+} & (
+  | {
+      /** A paid ad: counted once its dwell is reached. */
+      isHouse: false
+      /** "מודעה", or "דרושים · מודעה" for a job ad. Always holds "מודעה". */
+      label: AdLabel
+    }
+  | {
+      /**
+       * Hamtana's own line while no campaign runs: drawn like an ad, but never
+       * timed, never reported and never paid.
+       */
+      isHouse: true
+      /** Always "המתנה". */
+      label: HouseLabel
+    }
+)
 
 export type AdAnswer =
   | { kind: 'ad'; ad: Ad }
@@ -279,6 +300,38 @@ export type AdAnswer =
 export const DEFAULT_MIN_DWELL_MS = 10_000
 
 export const DEFAULT_ROTATE_MS = 30_000
+
+/** The dwell and rotation an answer names, clamped to sane bounds. */
+const timingOf = (body: unknown) => ({
+  minDwellMs: clamp(numberField(body, 'minDwellMs') ?? DEFAULT_MIN_DWELL_MS, 1_000, 120_000),
+  rotateMs: clamp(numberField(body, 'rotateMs') ?? DEFAULT_ROTATE_MS, 10_000, 600_000),
+})
+
+/**
+ * A house message (asked for with `house=1`): `ad.house === true` and
+ * `ad.serveId === "house"`, with no serve token. Its label is always
+ * "המתנה", whatever the server sent; any token is ignored, so it can never
+ * be reported.
+ */
+function houseOf(body: unknown, raw: unknown): AdAnswer | null {
+  const text = cleanLine(field(raw, 'text'), AD_TEXT_MAX)
+
+  if (text === '') return null
+
+  return {
+    kind: 'ad',
+    ad: {
+      serveId: HOUSE_SERVE_ID,
+      isHouse: true,
+      label: S.HOUSE_LABEL,
+      text,
+      url: safeHref(field(raw, 'url')),
+      advertiser: cleanLine(field(raw, 'advertiser'), ADVERTISER_MAX),
+      serveToken: '',
+      ...timingOf(body),
+    },
+  }
+}
 
 /** `GET /api/mod/ad`'s answer, or null when it does not fit the contract. */
 export function adAnswerOf(body: unknown): AdAnswer | null {
@@ -293,6 +346,10 @@ export function adAnswerOf(body: unknown): AdAnswer | null {
       : { kind: 'none', reason, retryAfterMs }
   }
 
+  if (field(raw, 'house') === true && field(raw, 'serveId') === HOUSE_SERVE_ID) {
+    return houseOf(body, raw)
+  }
+
   const serveId = stringField(raw, 'serveId')
   const serveToken = stringField(body, 'token')
   const text = cleanLine(field(raw, 'text'), AD_TEXT_MAX)
@@ -303,21 +360,13 @@ export function adAnswerOf(body: unknown): AdAnswer | null {
     kind: 'ad',
     ad: {
       serveId,
+      isHouse: false,
       label: adLabelOf(field(raw, 'label')),
       text,
       url: safeHref(field(raw, 'url')),
       advertiser: cleanLine(field(raw, 'advertiser'), ADVERTISER_MAX),
       serveToken,
-      minDwellMs: clamp(
-        numberField(body, 'minDwellMs') ?? DEFAULT_MIN_DWELL_MS,
-        1_000,
-        120_000,
-      ),
-      rotateMs: clamp(
-        numberField(body, 'rotateMs') ?? DEFAULT_ROTATE_MS,
-        10_000,
-        600_000,
-      ),
+      ...timingOf(body),
     },
   }
 }

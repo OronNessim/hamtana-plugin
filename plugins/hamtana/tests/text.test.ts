@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { adAnswerOf, adLabelOf, devicePollOf, retryAfterOf } from '../hooks/api'
+import { AD_LABELS, adAnswerOf, adLabelOf, devicePollOf, retryAfterOf } from '../hooks/api'
+import { dayOf, INSTALL_ID, newInstallId } from '../hooks/app'
 import * as S from '../hooks/strings'
 import { cleanLine, safeHref, serverBaseOf, shekels } from '../hooks/text'
 import { linesOf } from '../hooks/views'
@@ -132,6 +133,18 @@ describe('text', () => {
       expect(labelOfAnswer('דרושים' + bidi + ' · מודעה')).toBe('דרושים · מודעה')
     })
 
+    test('a paid ad can never carry the house label "המתנה"', () => {
+      expect(S.HOUSE_LABEL).toBe('המתנה')
+      expect(labelOfAnswer('המתנה')).toBe('מודעה')
+      expect(labelOfAnswer(' המתנה ')).toBe('מודעה')
+      expect(adLabelOf('המתנה')).toBe('מודעה')
+      expect((AD_LABELS as readonly string[]).includes('המתנה')).toBe(false)
+
+      const answer = adAnswerOf({ ad: { serveId: 's', text: 'טקסט', label: 'המתנה' }, token: 't' })
+
+      expect(answer).toMatchObject({ kind: 'ad', ad: { isHouse: false, label: 'מודעה', serveToken: 't' } })
+    })
+
     test('whatever the server sends, the label holds the ad marking', () => {
       const inputs: unknown[] = [undefined, null, 1, '', 'x', 'דרושים', 'דרושים · מודעה', 'מודעה', 'a'.repeat(5_000)]
 
@@ -139,6 +152,110 @@ describe('text', () => {
         expect(adLabelOf(input).includes('מודעה'), JSON.stringify(input)).toBe(true)
       }
     })
+  })
+
+  describe('house message', () => {
+    const house = (ad: Record<string, unknown> = {}, rest: Record<string, unknown> = {}) => ({
+      ad: {
+        serveId: 'house',
+        text: 'רוצים לפרסם כאן?',
+        url: 'https://hamtana.oronai.co.il/?ref=house#advertisers',
+        advertiser: '',
+        label: 'המתנה',
+        house: true,
+        ...ad,
+      },
+      token: null,
+      minDwellMs: 10_000,
+      rotateMs: 60_000,
+      ...rest,
+    })
+
+    test('the house answer parses with no serve token', () => {
+      expect(adAnswerOf(house())).toEqual({
+        kind: 'ad',
+        ad: {
+          serveId: 'house',
+          isHouse: true,
+          label: 'המתנה',
+          text: 'רוצים לפרסם כאן?',
+          url: 'https://hamtana.oronai.co.il/?ref=house#advertisers',
+          advertiser: '',
+          serveToken: '',
+          minDwellMs: 10_000,
+          rotateMs: 60_000,
+        },
+      })
+    })
+
+    test('a house message is always labelled "המתנה", whatever the server sends', () => {
+      const labels: unknown[] = [undefined, null, '', 'מודעה', 'דרושים · מודעה', 'ממומן', 42, 'המתנה · מודעה']
+
+      for (const label of labels) {
+        const answer = adAnswerOf(house({ label }))
+
+        expect(answer?.kind === 'ad' ? answer.ad.label : undefined, JSON.stringify(label)).toBe('המתנה')
+      }
+    })
+
+    test('a token sent with a house message is dropped, so it can never be reported', () => {
+      expect(adAnswerOf(house({}, { token: 'leaked' }))).toMatchObject({
+        kind: 'ad',
+        ad: { isHouse: true, serveToken: '' },
+      })
+    })
+
+    test('house needs both house: true and serveId "house"; otherwise it is a paid ad or nothing', () => {
+      expect(adAnswerOf(house({ house: 'true' })), 'no token, so not a paid ad either').toBeNull()
+      expect(adAnswerOf(house({ serveId: 'serve-1' })), 'house: true alone is not enough').toBeNull()
+      expect(adAnswerOf(house({ house: undefined }, { token: 't' }))).toMatchObject({
+        kind: 'ad',
+        ad: { isHouse: false, label: 'מודעה', serveToken: 't' },
+      })
+    })
+
+    test('house text is cleaned and capped, an empty one is refused, a bad link dropped', () => {
+      expect(adAnswerOf(house({ text: '' }))).toBeNull()
+      expect(adAnswerOf(house({ text: 42 }))).toBeNull()
+
+      const long = adAnswerOf(house({ text: 'א'.repeat(80) + '\n', url: 'javascript:alert(1)' }))
+
+      expect(long?.kind === 'ad' ? Array.from(long.ad.text).length : 0).toBe(60)
+      expect(long).toMatchObject({ kind: 'ad', ad: { url: null } })
+    })
+
+    test('paid ads are marked as not house', () => {
+      expect(adAnswerOf({ ad: { serveId: 's', text: 'טקסט' }, token: 't' })).toMatchObject({
+        kind: 'ad',
+        ad: { isHouse: false },
+      })
+    })
+
+    test('the other "none" answers are unchanged', () => {
+      for (const reason of ['paused', 'daily_cap', 'country', 'banned', 'no_campaigns']) {
+        expect(adAnswerOf({ ad: null, reason, retryAfterMs: 60_000 })).toEqual({
+          kind: 'none',
+          reason,
+          retryAfterMs: 60_000,
+        })
+      }
+    })
+  })
+
+  test('install ids are random and fit the server rule', () => {
+    const ids = Array.from({ length: 20 }, () => newInstallId())
+
+    for (const id of ids) {
+      expect(INSTALL_ID.test(id), id).toBe(true)
+    }
+
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  test('the hello day is the UTC date', () => {
+    expect(dayOf(0)).toBe('1970-01-01')
+    expect(dayOf(Date.UTC(2026, 9, 9, 23, 59))).toBe('2026-10-09')
+    expect(dayOf(Number.NaN)).toBeNull()
   })
 
   test('a poll answer must carry a clean token', () => {

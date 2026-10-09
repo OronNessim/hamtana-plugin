@@ -85,19 +85,25 @@ function paragraph(
 // ---- the band ------------------------------------------------------------------
 
 /**
- * The dim ad label the server chose ("מודעה" or "דרושים · מודעה"), one Text
- * that is ordered like every other Hebrew string here. The band row wraps
- * and nothing is measured against it, so a longer label only moves where
- * the row breaks: it never shortens the ad text, which has its own cap.
+ * The dim ad label the server chose ("מודעה" or "דרושים · מודעה"), or
+ * "המתנה" on a house message, one Text that is ordered like every other
+ * Hebrew string here. The band row wraps and nothing is measured against
+ * it, so a longer label only moves where the row breaks: it never shortens
+ * the ad text, which has its own cap.
  */
 const adLabel = (ui: Ui, layout: Layout, ad: Ad) =>
   ui.Text({ dimColor: true, children: [textOf(layout, ad.label)] })
 
-/** One ad: the dim label, the text, the advertiser, and its link. */
+/**
+ * One ad: the dim label, the text, the advertiser, and its link. A house
+ * message has the same layout, but its text is dim too, in the neutral tone
+ * of the invite (the band's other non-ad line), so it never reads as a paid
+ * ad. The same on terminal and desktop.
+ */
 export function adBand(ui: Ui, layout: Layout, ad: Ad): RenderElement {
   const parts: RenderElement[] = [
     adLabel(ui, layout, ad),
-    ui.Text({ children: [textOf(layout, ad.text)] }),
+    ui.Text({ ...(ad.isHouse ? { dimColor: true } : {}), children: [textOf(layout, ad.text)] }),
   ]
 
   if (ad.advertiser !== '') {
